@@ -1,0 +1,1 @@
+this project takes data from gyroscoe accleromater and syncs with firebase
