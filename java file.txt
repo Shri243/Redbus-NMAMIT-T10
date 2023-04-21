@@ -1,0 +1,148 @@
+package com.example.sensordata;
+
+import static android.util.Half.EPSILON;
+import static java.lang.Math.cos;
+import static java.lang.Math.sin;
+import static java.lang.Math.sqrt;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.os.Bundle;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
+    String acceldata;
+
+    FirebaseDatabase db;
+    DatabaseReference reference;
+
+    private static final float NS2S = 1.0f / 1000000000.0f;
+    private final float[] deltaRotationVector = new float[4];
+    private float timestamp;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        SensorManager sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if(sensorManager != null){
+
+            Sensor accelerosensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            Sensor gyroscopedata = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+
+            if(accelerosensor!=null){
+                sensorManager.registerListener(this,accelerosensor,sensorManager.SENSOR_DELAY_NORMAL);
+            }
+
+        } else{
+            Toast.makeText(this, "sensor service not availaible", Toast.LENGTH_SHORT).show();
+        }
+
+
+    }
+    public float calulate_error(float a, float b){
+        return Math.abs(b-a);
+    }
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        float a1 = 0,b1 = 0,c1 = 0,axisX1 = 0,axisY1 = 0,axisZ1 = 0,a = 0,b = 0,c = 0,axisX = 0,axisY = 0,axisZ = 0;
+        Sensordataas sesor1val = null;
+        gyro gyrodata = null;
+        if(event.sensor.getType() == Sensor.TYPE_ACCELEROMETER){
+            a1 = a;
+            b1 = b;
+            c1 = c;
+
+            a = event.values[0];
+             b = event.values[1];
+             c = event.values[2];
+
+            ((TextView)findViewById(R.id.acceltext)).setText("X: "+a+"Y: "+ b+"Z: "+c);
+            sesor1val = new  Sensordataas(a,b,c);
+        }
+
+        if (timestamp != 0) {
+            final float dT = (event.timestamp - timestamp) * NS2S;
+            // Axis of the rotation sample, not normalized yet.
+            axisX1 = axisX;
+            axisY1 = axisY;
+            axisZ1 = axisZ;
+            axisX = event.values[0];
+             axisY = event.values[1];
+             axisZ = event.values[2];
+
+            // Calculate the angular speed of the sample
+            float omegaMagnitude = (float) sqrt(axisX*axisX + axisY*axisY + axisZ*axisZ);
+
+            // Normalize the rotation vector if it's big enough to get the axis
+            // (that is, EPSILON should represent your maximum allowable margin of error)
+            if (omegaMagnitude > EPSILON) {
+                axisX /= omegaMagnitude;
+                axisY /= omegaMagnitude;
+                axisZ /= omegaMagnitude;
+            }
+
+            // Integrate around this axis with the angular speed by the timestep
+            // in order to get a delta rotation from this sample over the timestep
+            // We will convert this axis-angle representation of the delta rotation
+            // into a quaternion before turning it into the rotation matrix.
+            float thetaOverTwo = omegaMagnitude * dT / 2.0f;
+            float sinThetaOverTwo = (float) sin(thetaOverTwo);
+            float cosThetaOverTwo = (float) cos(thetaOverTwo);
+            deltaRotationVector[0] = sinThetaOverTwo * axisX;
+            deltaRotationVector[1] = sinThetaOverTwo * axisY;
+            deltaRotationVector[2] = sinThetaOverTwo * axisZ;
+            deltaRotationVector[3] = cosThetaOverTwo;
+        }
+        timestamp = event.timestamp;
+        float[] deltaRotationMatrix = new float[9];
+        float perr = (float) 0.25;
+        float aerr = (float) 0.10;
+        float xx1 = calulate_error(axisX1,axisX);
+        float xx2 = calulate_error(axisY1,axisY);
+        float xx3 = calulate_error(axisZ1,axisZ);
+
+        float xx4 = calulate_error(a,a1);
+        float xx5 = calulate_error(b,b1);
+        float xx6 = calulate_error(c,c1);
+        if ( xx1 > perr && xx2 > perr && xx3 > perr){
+            SensorManager.getRotationMatrixFromVector(deltaRotationMatrix, deltaRotationVector);
+            gyrodata = new gyro(deltaRotationVector[0],deltaRotationVector[1],deltaRotationVector[2],deltaRotationVector[3]);
+            ((TextView)findViewById(R.id.gyrotext)).setText("X: "+deltaRotationVector[0]+"Y: "+ deltaRotationVector[1]+"Z: "+deltaRotationVector[2]);
+            db = FirebaseDatabase.getInstance();
+            reference = db.getReference("Sensorvalue");
+            reference.child("acclerometer").setValue(sesor1val).addOnCompleteListener(new OnCompleteListener<Void>() {
+                @Override
+                public void onComplete(@NonNull Task<Void> task) {
+                    Toast.makeText(MainActivity.this, "Data Inserted", Toast.LENGTH_SHORT).show();
+                }
+            });
+            reference.child("gyroscope9").setValue(gyrodata).addOnCompleteListener(new OnCompleteListener<Void>() {
+                @Override
+                public void onComplete(@NonNull Task<Void> task) {
+                    Toast.makeText(MainActivity.this, "Data Inserted", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    }
+
+
+
+
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
+    }
+}
